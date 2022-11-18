@@ -47,6 +47,9 @@ export const settings = {
   shouldCreateEmptyGroup: false,
   forceShowConj: false,
   canShortMongoQuery: true,
+  removeEmptyGroupsOnLoad: true,
+  removeIncompleteRulesOnLoad: true,
+  removeInvalidMultiSelectValuesOnLoad: true,
   groupActionsPosition: "topRight", // oneOf [topLeft, topCenter, topRight, bottomLeft, bottomCenter, bottomRight]
   setOpOnChangeField: ["keep", "default"], // 'default' (default if present), 'keep' (keep prev from last field), 'first', 'none'
   groupOperators: ["some", "all", "none"],

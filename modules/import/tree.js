@@ -4,12 +4,12 @@ import {extendConfig} from "../utils/configUtils";
 import {getTreeBadFields, getLightTree} from "../utils/treeUtils";
 import {isJsonLogic} from "../utils/stuff";
 
-export const getTree = (immutableTree, light = true) => {
+export const getTree = (immutableTree, light = true, children1AsArray = true) => {
   if (!immutableTree) return undefined;
   let tree = immutableTree;
   tree = tree.toJS();
   if (light)
-    tree = getLightTree(tree);
+    tree = getLightTree(tree, children1AsArray);
   return tree;
 };
 
@@ -30,7 +30,7 @@ export const loadTree = (serTree) => {
 export const checkTree = (tree, config) => {
   if (!tree) return undefined;
   const extendedConfig = extendConfig(config);
-  return validateTree(tree, null, extendedConfig, extendedConfig, true, true);
+  return validateTree(tree, null, extendedConfig, extendedConfig);
 };
 
 export const isValidTree = (tree) => {
@@ -50,7 +50,18 @@ export {isJsonLogic};
 function jsTreeToImmutable(tree) {
   return fromJS(tree, function (key, value) {
     let outValue;
-    if (key == "value" && value.get(0) && value.get(0).toJS !== undefined) {
+    if (key == "properties") {
+      outValue = value.toOrderedMap();
+
+      // `value` should be undefined instead of null
+      // JSON doesn't support undefined and replaces undefined -> null
+      // So fix: null -> undefined
+      for (let i = 0 ; i < 2 ; i++) {
+        if (outValue.get("value")?.get(i) === null) {
+          outValue = outValue.setIn(["value", i], undefined);
+        }
+      }
+    } else if (key == "value" && value.get(0) && value.get(0).toJS !== undefined) {
       const valueJs = value.get(0).toJS();
       if (valueJs.func) {
         outValue = value.toOrderedMap();
@@ -61,6 +72,8 @@ function jsTreeToImmutable(tree) {
     } else if (key == "asyncListValues") {
       // keep in JS format
       outValue = value.toJS();
+    } else if (key == "children1" && Immutable.Iterable.isIndexed(value)) {
+      outValue = new Immutable.OrderedMap(value.map(child => [child.get("id"), child]));
     } else {
       outValue = Immutable.Iterable.isIndexed(value) ? value.toList() : value.toOrderedMap();
     }

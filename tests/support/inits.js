@@ -2,6 +2,21 @@
 import { Utils } from "react-awesome-query-builder";
 const { uuid } = Utils;
 
+export const tree_with_empty_group = {
+  type: "group",
+  id: uuid(),
+  children1: {
+    [uuid()]: {
+      type: "group",
+      properties: {
+        conjunction: "AND",
+        not: false
+      },
+      children1: {}
+    },
+  }
+};
+
 export const tree_with_number = {
   type: "group",
   id: uuid(),
@@ -459,7 +474,7 @@ export const with_datetime = {
 };
 
 export const with_select = {
-  "and": [{  "==": [ { "var": "color" }, "red" ]  }]
+  "and": [{  "==": [ { "var": "color" }, "orange" ]  }]
 };
 
 export const with_bool = {

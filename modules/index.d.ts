@@ -170,7 +170,7 @@ export interface Utils {
   _mongodbFormat(tree: ImmutableTree, config: Config): [Object | undefined, Array<string>];
   elasticSearchFormat(tree: ImmutableTree, config: Config): Object | undefined;
   // load, save
-  getTree(tree: ImmutableTree, light?: boolean): JsonTree;
+  getTree(tree: ImmutableTree, light?: boolean, children1AsArray?: boolean): JsonTree;
   loadTree(jsonTree: JsonTree): ImmutableTree;
   checkTree(tree: ImmutableTree, config: Config): ImmutableTree;
   isValidTree(tree: ImmutableTree): boolean;
@@ -185,6 +185,7 @@ export interface Utils {
   simulateAsyncFetch(all: AsyncFetchListValues, pageSize?: number, delay?: number): AsyncFetchListValuesFn;
   // config utils
   ConfigUtils: {
+    extendConfig(config: Config): Config;
     getFieldConfig(config: Config, field: string): Field | null;
     getFuncConfig(config: Config, func: string): Func | null;
     getFuncArgConfig(config: Config, func: string, arg: string): FuncArg | null;
@@ -203,6 +204,14 @@ export interface BuilderProps {
   config: Config,
   actions: Actions,
   dispatch: Dispatch,
+}
+
+export interface ItemBuilderProps {
+  config: Config;
+  actions: Actions;
+  properties: TypedMap<any>;
+  type: ItemType;
+  itemComponent: Factory<ItemProperties>;
 }
 
 export interface QueryProps {
@@ -585,6 +594,7 @@ interface TreeItem extends ListItem {
   selectable?: boolean,
   disableCheckbox?: boolean,
   checkable?: boolean,
+  path?: Array<string>
 }
 type TreeData = Array<TreeItem>;
 type ListValues = TypedMap<string> | TypedKeyMap<string | number, string> | Array<ListItem> | Array<string | number>;
@@ -813,6 +823,7 @@ export interface RenderSettings {
   renderConfirm?: ConfirmFunc,
   useConfirm?: () => Function,
   renderSize?: AntdSize,
+  renderItem?: Factory<ItemBuilderProps>,
   dropdownPlacement?: AntdPosition,
   groupActionsPosition?: AntdPosition,
   showLabels?: boolean,
@@ -856,6 +867,9 @@ export interface BehaviourSettings {
   showErrorMessage?: boolean,
   canShortMongoQuery?: boolean,
   convertableWidgets?: TypedMap<Array<string>>,
+  removeEmptyGroupsOnLoad?: boolean,
+  removeIncompleteRulesOnLoad?: boolean,
+  removeInvalidMultiSelectValuesOnLoad?: boolean,
 }
 
 export interface OtherSettings {
@@ -909,6 +923,7 @@ export interface Func {
   renderBrackets?: Array<ReactElement | string>,
   renderSeps?: Array<ReactElement | string>,
   spelFormatFunc?: SpelFormatFunc,
+  allowSelfNesting?: boolean,
 }
 export interface FuncArg extends ValueField {
   isOptional?: boolean,

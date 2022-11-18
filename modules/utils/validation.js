@@ -2,8 +2,9 @@ import {
   getFieldConfig, getOperatorConfig, getFieldWidgetConfig, getFuncConfig,
 } from "./configUtils";
 import {getOperatorsForField, getWidgetForFieldOp, getNewValueForFieldOp} from "../utils/ruleUtils";
-import {defaultValue, deepEqual, getItemInListValues, logger} from "../utils/stuff";
+import {defaultValue, deepEqual, getItemInListValues, logger, immutableEqual} from "../utils/stuff";
 import {defaultOperatorOptions} from "../utils/defaultUtils";
+import {fixPathsInTree} from "../utils/treeUtils";
 import omit from "lodash/omit";
 import { List } from "immutable";
 
@@ -23,9 +24,41 @@ const isTypeOf = (v, type) => {
   return false;
 };
 
-export const validateTree = (tree, _oldTree, config, oldConfig, removeEmptyGroups = false, removeInvalidRules = false) => {
+export const createValidationMemo = () => {
+  let originalTree;
+  let validatedTree;
+  let configId;
+
+  return (config, tree, oldConfig) => {
+    if (!tree) {
+      return null;
+    }
+    if (config.__configId === configId && (immutableEqual(tree, originalTree) || immutableEqual(tree, validatedTree))) {
+      return validatedTree;
+    } else {
+      configId = config.__configId;
+      originalTree = tree;
+      validatedTree = validateAndFixTree(tree, null, config, oldConfig || config);
+      return validatedTree;
+    }
+  };
+};
+
+export const validateAndFixTree = (newTree, _oldTree, newConfig, oldConfig) => {
+  let tree = validateTree(newTree, _oldTree, newConfig, oldConfig);
+  tree = fixPathsInTree(tree);
+  return tree;
+};
+
+export const validateTree = (tree, _oldTree, config, oldConfig, removeEmptyGroups, removeIncompleteRules) => {
+  if (removeEmptyGroups === undefined) {
+    removeEmptyGroups = config.settings.removeEmptyGroupsOnLoad;
+  }
+  if (removeIncompleteRules === undefined) {
+    removeIncompleteRules = config.settings.removeIncompleteRulesOnLoad;
+  }
   const c = {
-    config, oldConfig, removeEmptyGroups, removeInvalidRules
+    config, oldConfig, removeEmptyGroups, removeIncompleteRules
   };
   return validateItem(tree, [], null, {}, c);
 };
@@ -76,7 +109,7 @@ function validateGroup (item, path, itemId, meta, c) {
 
 
 function validateRule (item, path, itemId, meta, c) {
-  const {removeInvalidRules, config, oldConfig} = c;
+  const {removeIncompleteRules, config, oldConfig} = c;
   const {showErrorMessage} = config.settings;
   let id = item.get("id");
   let properties = item.get("properties");
@@ -94,7 +127,7 @@ function validateRule (item, path, itemId, meta, c) {
     value: value ? value.toJS() : null,
     valueError: valueError ? valueError.toJS() : null,
   };
-  let _wasValid = field && operator && value && !value.find((v, ind) => (v === undefined));
+  let _wasValid = field && operator && value && !value.includes(undefined);
 
   if (!id && itemId) {
     id = itemId;
@@ -160,7 +193,9 @@ function validateRule (item, path, itemId, meta, c) {
   //validate values
   valueSrc = properties.get("valueSrc");
   value = properties.get("value");
-  let {newValue, newValueSrc, newValueError} = getNewValueForFieldOp(config, oldConfig, properties, field, operator, null, true);
+  const canFix = !showErrorMessage;
+  const isEndValue = true;
+  let {newValue, newValueSrc, newValueError} = getNewValueForFieldOp(config, oldConfig, properties, field, operator, null, canFix, isEndValue);
   value = newValue;
   valueSrc = newValueSrc;
   valueError = newValueError;
@@ -179,13 +214,12 @@ function validateRule (item, path, itemId, meta, c) {
     valueError: valueError ? valueError.toJS() : null,
   };
   const sanitized = !deepEqual(oldSerialized, newSerialized);
-  const isValid = field && operator && value && !value.find((v, _ind) => (v === undefined));
+  const isComplete = field && operator && value && !value.includes(undefined);
   if (sanitized)
     meta.sanitized = true;
-
-  if (sanitized && !isValid && removeInvalidRules)
+  if (!isComplete && removeIncompleteRules)
     item = undefined;
-  if (sanitized && item)
+  else if (sanitized)
     item = item.set("properties", properties);
 
   return item;
@@ -244,22 +278,30 @@ export const validateValue = (config, leftField, field, operator, value, valueTy
   if (isRawValue && validError) {
     console.warn("[RAQB validate]", `Field ${field}: ${validError}`);
   }
-
-  return [validError, validError ? value : fixedValue];
+  
+  return [validError, fixedValue];
 };
 
-const validateValueInList = (value, listValues) => {
+const validateValueInList = (value, listValues, canFix, isEndValue, removeInvalidMultiSelectValuesOnLoad) => {
   const values = List.isList(value) ? value.toJS() : (value instanceof Array ? [...value] : undefined);
   if (values) {
-    for (let i = 0 ; i < values.length ; i++) {
-      const vv = getItemInListValues(listValues, values[i]);
+    const [goodValues, badValues] = values.reduce(([goodVals, badVals], val) => {
+      const vv = getItemInListValues(listValues, val);
       if (vv == undefined) {
-        return [`Value ${value[i]} is not in list of values`, values];
+        return [goodVals, [...badVals, val]];
       } else {
-        values[i] = vv.value;
+        return [[...goodVals, vv.value], badVals];
       }
+    }, [[], []]);
+    const plural = badValues.length > 1;
+    const err = badValues.length ? `${plural ? "Values" : "Value"} ${badValues.join(", ")} ${plural ? "are" : "is"} not in list of values` : null;
+    // always remove bad values at tree validation as user can't unselect them (except AntDesign widget)
+    if (removeInvalidMultiSelectValuesOnLoad !== undefined) {
+      canFix = removeInvalidMultiSelectValuesOnLoad;
+    } else {
+      canFix = canFix || isEndValue;
     }
-    return [null, values];
+    return [err, canFix ? goodValues : value];
   } else {
     const vv = getItemInListValues(listValues, value);
     if (vv == undefined) {
@@ -275,7 +317,6 @@ const validateValueInList = (value, listValues) => {
 * 
 */
 const validateNormalValue = (leftField, field, value, valueSrc, valueType, asyncListValues, config, operator = null, isEndValue = false, canFix = false) => {
-  let fixedValue = value;
   if (field) {
     const fieldConfig = getFieldConfig(config, field);
     const w = getWidgetForFieldOp(config, field, operator, valueSrc);
@@ -293,13 +334,13 @@ const validateNormalValue = (leftField, field, value, valueSrc, valueType, async
     if (fieldSettings) {
       const listValues = asyncListValues || fieldSettings.listValues;
       if (listValues && !fieldSettings.allowCustomValues) {
-        return validateValueInList(value, listValues);
+        return validateValueInList(value, listValues, canFix, isEndValue, config.settings.removeInvalidMultiSelectValuesOnLoad);
       }
       if (fieldSettings.min != null && value < fieldSettings.min) {
-        return [`Value ${value} < min ${fieldSettings.min}`, value];
+        return [`Value ${value} < min ${fieldSettings.min}`, canFix ? fieldSettings.min : value];
       }
       if (fieldSettings.max != null && value > fieldSettings.max) {
-        return [`Value ${value} > max ${fieldSettings.max}`, value];
+        return [`Value ${value} > max ${fieldSettings.max}`, canFix ? fieldSettings.max : value];
       }
     }
   }
@@ -313,12 +354,13 @@ const validateNormalValue = (leftField, field, value, valueSrc, valueType, async
 */
 const validateFieldValue = (leftField, field, value, _valueSrc, valueType, asyncListValues, config, operator = null, isEndValue = false, canFix = false) => {
   const {fieldSeparator} = config.settings;
+  const isFuncArg = typeof field == "object" && field?._isFuncArg;
   const leftFieldStr = Array.isArray(leftField) ? leftField.join(fieldSeparator) : leftField;
   const rightFieldStr = Array.isArray(value) ? value.join(fieldSeparator) : value;
   const rightFieldDefinition = getFieldConfig(config, value);
   if (!rightFieldDefinition)
     return [`Unknown field ${value}`, value];
-  if (rightFieldStr == leftFieldStr)
+  if (rightFieldStr == leftFieldStr && !isFuncArg)
     return [`Can't compare field ${leftField} with itself`, value];
   if (valueType && valueType != rightFieldDefinition.type)
     return [`Field ${value} is of type ${rightFieldDefinition.type}, but expected ${valueType}`, value];

@@ -99,20 +99,24 @@ export const removeIsLockedInTree = (tree) => {
 
 
 /**
- * Set correct `path` in every item
+ * Set correct `path` and `id` in every item
  * @param {Immutable.Map} tree
  * @return {Immutable.Map} tree
  */
 export const fixPathsInTree = (tree) => {
   let newTree = tree;
 
-  function _processNode (item, path, lev) {
+  function _processNode (item, path, lev, nodeId) {
     if (!item) return;
-    const _id = item.get("id");
-    const itemPath = path.push(item.get("id"));
-    const currItemPath = item.get("path");
-    if (!currItemPath || !currItemPath.equals(itemPath)) {
+    const currPath = item.get("path");
+    const currId = item.get("id");
+    const itemId = currId || nodeId;
+    const itemPath = path.push(itemId);
+    if (!currPath || !currPath.equals(itemPath)) {
       newTree = newTree.setIn(expandTreePath(itemPath, "path"), itemPath);
+    }
+    if (!currId) {
+      newTree = newTree.setIn(expandTreePath(itemPath, "id"), itemId);
     }
 
     const children = item.get("children1");
@@ -124,8 +128,8 @@ export const fixPathsInTree = (tree) => {
           new Immutable.OrderedMap(children)
         );
       }
-      children.map((child, _childId) => {
-        _processNode(child, itemPath, lev + 1);
+      children.map((child, childId) => {
+        _processNode(child, itemPath, lev + 1, childId);
       });
     }
   }
@@ -139,15 +143,15 @@ export const fixPathsInTree = (tree) => {
 export const fixEmptyGroupsInTree = (tree) => {
   let newTree = tree;
 
-  function _processNode (item, path, lev) {
+  function _processNode (item, path, lev, nodeId) {
     if (!item) return false;
-    const id = item.get("id");
-    const itemPath = path.push(item.get("id"));
+    const itemId = item.get("id") || nodeId;
+    const itemPath = path.push(itemId);
 
     const children = item.get("children1");
     if (children) {
-      const allChildrenGone = children.map((child, _childId) => {
-        return _processNode(child, itemPath, lev + 1);
+      const allChildrenGone = children.map((child, childId) => {
+        return _processNode(child, itemPath, lev + 1, childId);
       }).reduce((curr, v) => (curr && v), true);
       if ((children.size == 0 || allChildrenGone) && lev > 0) {
         newTree = newTree.deleteIn(expandTreePath(itemPath));
@@ -314,14 +318,13 @@ export const getTotalRulesCountInTree = (tree) => {
       type = item.type;
     }
     
-    const isRuleGroup = type == "rule_group";
-    if (children && !isRuleGroup) {
+    if (type == "rule" || type == "rule_group") {
+      // tip: count rule_group as 1 rule
+      cnt++;
+    } else if (children) {
       children.map((child, _childId) => {
         _processNode(child, path.concat(id), lev + 1);
       });
-    } else {
-      // tip: count rule_group as 1 rule
-      cnt++;
     }
   }
 
@@ -357,13 +360,13 @@ export const getTreeBadFields = (tree) => {
 
 // Remove fields that can be calced: "id", "path"
 // Remove empty fields: "operatorOptions"
-export const getLightTree = (tree) => {
+export const getLightTree = (tree, children1AsArray = false) => {
   let newTree = tree;
 
   function _processNode (item, itemId) {
     if (item.path)
       delete item.path;
-    if (itemId)
+    if (!children1AsArray && itemId)
       delete item.id;
     let properties = item.properties;
     if (properties) {
@@ -375,6 +378,9 @@ export const getLightTree = (tree) => {
     if (children) {
       for (let id in children) {
         _processNode(children[id], id);
+      }
+      if (children1AsArray) {
+        item.children1 = Object.values(children);
       }
     }
   }

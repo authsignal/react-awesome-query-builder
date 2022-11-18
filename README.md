@@ -38,6 +38,7 @@ See [live demo](https://ukrbublik.github.io/react-awesome-query-builder)
   * [Config format](#config-format)
 * [Versions](#versions)
   * [Changelog](#changelog)
+  * [Migration to 5.2.0](#migration-to-520)
   * [Migration to 4.9.0](#migration-to-490)
   * [Migration from v1 to v2](#migration-from-v1-to-v2)
 * [Contributing](#contributing)
@@ -91,7 +92,7 @@ npm i @material-ui/core @material-ui/lab @material-ui/icons @material-ui/pickers
 
 For MUI 5 widgets only:
 ```
-npm i @mui/material @emotion/react @emotion/styled @mui/lab @mui/icons-material material-ui-confirm@3 --save
+npm i @mui/material @emotion/react @emotion/styled @mui/lab @mui/icons-material @mui/x-date-pickers material-ui-confirm@3 --save
 ```
 
 For Bootstrap widgets only:
@@ -400,7 +401,7 @@ Wrapping in `div.query-builder-container` is necessary if you put query builder 
 
 ### `Utils`
 - Save, load:
-  #### getTree (immutableValue, light = true) -> Object
+  #### getTree (immutableValue, light = true, children1AsArray = true) -> Object
   Convert query value from internal Immutable format to JS format. 
   You can use it to save value on backend in `onChange` callback of `<Query>`.  
   Tip: Use `light = false` in case if you want to store query value in your state in JS format and pass it as `value` of `<Query>` after applying `loadTree()` (which is not recommended because of double conversion). See issue [#190](https://github.com/ukrbublik/react-awesome-query-builder/issues/190)
@@ -437,7 +438,7 @@ Wrapping in `div.query-builder-container` is necessary if you put query builder 
 
 
 ### Config format
-This library uses configarion driven aprroach. 
+This library uses configarion driven aproach. 
 Config defines what value types, operators are supported, how they are rendered, imported, exported. 
 At minimum, you need to provide your own set of fields as in [basic usage](#usage). 
 See [`CONFIG`](/CONFIG.adoc) for full documentation.
@@ -446,12 +447,13 @@ See [`CONFIG`](/CONFIG.adoc) for full documentation.
 
 ## Versions
 
-Versions 4.x are backward-compatible with 2.x and 3.x. 
+Versions 5.x are backward-compatible with 2.x 3.x 4.x.  
 It's recommended to update your version.
 
 ### Supported versions
 | Version | Supported          |
 | ------- | ------------------ |
+| 5.x     | :white_check_mark: |
 | 4.x     | :white_check_mark: |
 | 3.x     | :white_check_mark: |
 | 2.x     | :white_check_mark: |
@@ -461,12 +463,31 @@ It's recommended to update your version.
 ### Changelog
 See [`CHANGELOG`](/CHANGELOG.md)
 
+### Migration to 5.2.0
+Breaking change: `children1` is now an indexed array (instead of object) in result of `Utils.getTree()` to preserve items order.  
+Before:
+```js
+children1: {
+  '<id1>': { type: 'rule', properties: ... },
+  '<id2>': { type: 'rule', properties: ... }
+}
+```
+After:
+```js
+children1: [
+  { id: '<id1>', type: 'rule', properties: ... },
+  { id: '<id2>', type: 'rule', properties: ... },
+]
+```
+`Utils.loadTree()` is backward comatible with children1 being array or object.  
+But if you rely on previous format (maybe do post-processing of `getTree()` result), please use `Utils.getTree(tree, true, false)` - it will behave same as before this change. 
+
 ### Migration to 4.9.0
-Version 4.9.0 has a breaking change for operators `is_empty` and `is_not_empty`. 
-Now these operstors can be used for text type only (for other types they will be auto converted to `is_null`/`is_not_null` during loading of query value created with previous versions). 
-Changed meaning of `is_empty` - now it's just strict comparing with empty string. 
-Before change the meaning was similar to `is_null`. 
-If you used `is_empty` for text types with intention of comparing with null, please replace `is_empty` -> `is_null`, `is_not_empty` -> `is_not_null` in saved query values. 
+Version 4.9.0 has a breaking change for operators `is_empty` and `is_not_empty`.  
+Now these operators can be used for text type only (for other types they will be auto converted to `is_null`/`is_not_null` during loading of query value created with previous versions).  
+Changed meaning of `is_empty` - now it's just strict comparing with empty string.  
+Before change the meaning was similar to `is_null`.  
+If you used `is_empty` for text types with intention of comparing with null, please replace `is_empty` -> `is_null`, `is_not_empty` -> `is_not_null` in saved query values.  
 If you used JsonLogic for saving, you need to replace `{"!": {"var": "your_field"}}` -> `{"==": [{"var": "your_field"}, null]}` and `{"!!": {"var": "your_field"}}` -> `{"!=": [{"var": "your_field"}, null]}`.
 
 ### Migration from v1 to v2
